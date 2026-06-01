@@ -1,0 +1,286 @@
+01a Imputation and Estimation with Robust SE   
+GOPTIONS ACCESSIBLE;
+
+libname home 'SUPPRESSED FILE PATH';
+proc format; value grouplab 1 = 'Memory' 2 = 'Reasoning' 3 = 'Speed' 4 = 'Control'; run;
+
+proc sort data=home.active_claimsKM_forgellert; by id; run; /*N=1789*/
+proc sort data=home.sdoh_composites; by id;run;/*N=2505*/
+
+data active_claims_sdoh; /*N=1605*/
+	merge home.active_claimskm_forgellert (in=a) home.sdoh_composites (in=b);
+	by id;
+	if a and b;
+run;
+/*Checking sample restriction to only include individuals who are
+white, Black or African American.*/
+proc freq data=active_claims_sdoh;
+table race_1 / missing; 
+run;
+
+data active_claims_sdoh;
+	set active_claims_sdoh;
+
+	memes = memory * es_sdoh_comp;
+	reases = reasoning * es_sdoh_comp;
+	spdes = speed * es_sdoh_comp;
+	treates = treatment * es_sdoh_comp ;
+
+	memahc = memory * ahc_sdoh_comp;
+	reasahc = reasoning * ahc_sdoh_comp;
+	spdahc = speed * ahc_sdoh_comp;
+	treatahc = treatment * ahc_sdoh_comp ;
+
+	memeos = memory * eos_sdoh_comp;
+	reaseos = reasoning * eos_sdoh_comp;
+	spdeos = speed * eos_sdoh_comp;
+	treaeos = treatment * eos_sdoh_comp ;
+
+	memnbe = memory * nbe_sdoh_comp;
+	reasnbe = reasoning * nbe_sdoh_comp;
+	spdnbe = speed * nbe_sdoh_comp;
+	treanbe = treatment * nbe_sdoh_comp ;
+
+	memscc = memory * scc_sdoh_comp;
+	reasscc = reasoning * scc_sdoh_comp;
+	spdscc = speed * scc_sdoh_comp;
+	treascc = treatment * scc_sdoh_comp ;
+
+	neighborhood_proxy = catx(',', SCC_SDoH_comp, EOS_SDoH_comp, ES_SDoH_comp, AHC_SDoH_comp, NBE_SDoH_comp);
+
+	label
+	ES_SDoH_comp = "Economic Stability SDoH Factor Score"
+	AHC_SDoH_comp = "Access to Health Care SDoH Factor Score"
+	EOS_SDoH_comp = "Education and Occupatioanl Status SDoH Factor Score"
+	NBE_SDoH_comp = "Neighborhood and Build Environment SDoH Factor Score"
+	SCC_SDoH_comp = "Social and Community Context SDoH Factor Score";
+run;
+
+/********************CAUSE-SPECIFIC MODELS WITHOUT INTERACTION TERMS **************************************/
+*THESE MODELS DO NOT INCLUDE RACE OR EDUCATION;
+
+proc means data=active_claims_sdoh n nmiss mean;
+var mem_1 spd_1 rea_1 marstat1 marstat4 marstat5 ES_SDoH_comp AHC_SDoH_comp EOS_SDoH_comp NBE_SDoH_comp SCC_SDoH_comp;
+run;
+
+
+ods listing close;
+ods output CovB = covb;
+ods output ParameterEstimates = paramest;
+
+********************CHECKING PH ASSUMPTIONS OF FULL MODEL 3 WAYS - USING UNIMPUTED DATA*********************;
+/*FULL MODEL WITHOUT TIME INTERACTIONS*/
+proc phreg data =active_claims_sdoh zph ; 
+	class memory (ref='0') reasoning(ref='0') speed (ref='0') female (ref='0') agecats5yr2 (ref='0') agecats5yr3 (ref='0') agecats5yr4 (ref='0') 
+	marstat1(ref='0') marstat4(ref='0') marstat5(ref='0') currentsmoker(ref='0') formersmoker(ref='0')
+	penn(ref='0') indiana(ref='0') hrca(ref='0') jhu(ref='0') wayne(ref='0') 
+	rcode1(ref='0') rcode2(ref='0') rcode3(ref='0') rcode4(ref='0') rcode5(ref='0')
+	baselineisch (ref='0') baselineami (ref='0') baselineafib (ref='0') baselinechf(ref='0')
+	baselinediab(ref='0') baselinehyp(ref='0'); 
+	model timefromtreatment*ccwstatus(0,1)=memory reasoning speed ES_SDoH_comp AHC_SDoH_comp EOS_SDoH_comp
+NBE_SDoH_comp SCC_SDoH_comp  female 
+	agecats5yr2 agecats5yr3 agecats5yr4 marstat1 marstat4 marstat5 yrseduc_1 currentsmoker formersmoker
+	penn indiana hrca jhu wayne rcode1 rcode2 rcode3 rcode4 rcode5 
+	baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp 
+	/*FACTOR SCORES*/ 
+	mem_1 spd_1 rea_1  /rl; 
+run;
+proc phreg data =active_claims_sdoh zph (transform=log); 
+	class memory (ref='0') reasoning(ref='0') speed (ref='0') female (ref='0') agecats5yr2 (ref='0') agecats5yr3 (ref='0') agecats5yr4 (ref='0') 
+	marstat1(ref='0') marstat4(ref='0') marstat5(ref='0') currentsmoker(ref='0') formersmoker(ref='0')
+	penn(ref='0') indiana(ref='0') hrca(ref='0') jhu(ref='0') wayne(ref='0') 
+	rcode1(ref='0') rcode2(ref='0') rcode3(ref='0') rcode4(ref='0') rcode5(ref='0')
+	baselineisch (ref='0') baselineami (ref='0') baselineafib (ref='0') baselinechf(ref='0')
+	baselinediab(ref='0') baselinehyp(ref='0'); 
+	model timefromtreatment*ccwstatus(0,1)=memory reasoning speed ES_SDoH_comp AHC_SDoH_comp EOS_SDoH_comp
+NBE_SDoH_comp SCC_SDoH_comp  female 
+	agecats5yr2 agecats5yr3 agecats5yr4 marstat1 marstat4 marstat5 yrseduc_1 currentsmoker formersmoker
+	penn indiana hrca jhu wayne rcode1 rcode2 rcode3 rcode4 rcode5 
+	baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp 
+	/*FACTOR SCORES*/ 
+	mem_1 spd_1 rea_1  /rl; 
+run;
+proc phreg data =active_claims_sdoh zph (transform=identity) ; 
+	class memory (ref='0') reasoning(ref='0') speed (ref='0') female (ref='0') agecats5yr2 (ref='0') agecats5yr3 (ref='0') agecats5yr4 (ref='0') 
+	marstat1(ref='0') marstat4(ref='0') marstat5(ref='0') currentsmoker(ref='0') formersmoker(ref='0')
+	penn(ref='0') indiana(ref='0') hrca(ref='0') jhu(ref='0') wayne(ref='0') 
+	rcode1(ref='0') rcode2(ref='0') rcode3(ref='0') rcode4(ref='0') rcode5(ref='0')
+	baselineisch (ref='0') baselineami (ref='0') baselineafib (ref='0') baselinechf(ref='0')
+	baselinediab(ref='0') baselinehyp(ref='0'); 
+	model timefromtreatment*ccwstatus(0,1)=memory reasoning speed ES_SDoH_comp AHC_SDoH_comp EOS_SDoH_comp
+NBE_SDoH_comp SCC_SDoH_comp  female 
+	agecats5yr2 agecats5yr3 agecats5yr4 marstat1 marstat4 marstat5 yrseduc_1 currentsmoker formersmoker
+	penn indiana hrca jhu wayne rcode1 rcode2 rcode3 rcode4 rcode5 
+	baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp 
+	/*FACTOR SCORES*/ 
+	mem_1 spd_1 rea_1  /rl; 
+run;
+/**************END OF CHECKING PH ASSUMPTION - MEM_1 AND SPD_1 VIOLATE IN ALL THREE***************/
+
+/**************IMPUTATIONS FOR ADJUSTED MODELS****************************************************/
+proc mi data=active_claims_sdoh nimpute=10 out=mi_out seed=54321;
+var timefromtreatment ccwstatus memory reasoning speed female agecats5yr2 agecats5yr3 agecats5yr4 marstat1 
+marstat4 marstat5 currentsmoker formersmoker penn indiana hrca jhu wayne rcode1 rcode2
+ rcode3 rcode4 rcode5 baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp mem_1 spd_1 rea_1
+ ES_SDoH_comp AHC_SDoH_comp EOS_SDoH_comp NBE_SDoH_comp SCC_SDoH_comp;
+ run;
+
+ods listing close;
+ods output CovB = covb;
+ods output ParameterEstimates = paramest;
+/*MODEL 1 - UNADJUSTED, TREATMENTS (NO INTERACTIONS)*/
+proc phreg data=active_claims_sdoh zph(noplot) covs(aggregate) ;
+	class memory(ref="0") speed(ref="0") reasoning(ref="0") ;
+	model timefromtreatment*ccwstatus(0,1)=memory speed reasoning  ES_SDoH_comp AHC_SDoH_comp EOS_SDoH_comp
+NBE_SDoH_comp SCC_SDoH_comp / rl;
+	title "UNADJUSTED, TREATMENTS (NO INTERACTIONS)";
+	ods output ParameterEstimates=estimates_model1;
+run;
+
+
+/**************MODEL 2 - TREATMENT WITH BASIC BASELINE VARIABLES*************************************/
+/**************	- ADDING IN TIME DEPENDENT VARIABLES*************************************/
+
+proc phreg data=mi_out zph (noplot)  covs(aggregate);
+class memory (ref='0') reasoning (ref='0') speed (ref='0') white (ref='0') female (ref='0') agecats5yr2 (ref='0') 
+agecats5yr3 (ref='0') agecats5yr4 (ref='0') 
+marstat1 (ref='0') marstat4 (ref='0') marstat5 (ref='0') currentsmoker (ref='0') formersmoker (ref='0') 
+penn (ref='0') indiana (ref='0') hrca (ref='0') jhu (ref='0') wayne (ref='0') 
+rcode1 (ref='0') rcode2 (ref='0') rcode3 (ref='0') rcode4 (ref='0') rcode5 (ref='0') 
+baselineisch (ref='0') baselineami (ref='0') baselineafib (ref='0') baselinechf (ref='0') baselinediab (ref='0') 
+baselinehyp (ref='0') ; 
+model timefromtreatment*ccwstatus(0,1)= memory speed reasoning
+es_sdoh_comp ahc_sdoh_comp eos_sdoh_comp nbe_sdoh_comp scc_sdoh_comp
+penn indiana hrca jhu wayne
+rcode1 rcode2 rcode3 rcode4 rcode5
+agecats5yr2 agecats5yr3 agecats5yr4 female
+mem_1 spd_1 rea_1 memt spdt / rl;
+memt = mem_1*timefromtreatment;
+spdt = spd_1*timefromtreatment;
+by _Imputation_;
+ods output ParameterEstimates=estimates_model2;
+run;
+
+proc mianalyze parms=estimates_model2;
+modeleffects memory speed reasoning 
+es_sdoh_comp ahc_sdoh_comp eos_sdoh_comp nbe_sdoh_comp scc_sdoh_comp
+penn indiana hrca jhu wayne
+rcode1 rcode2 rcode3 rcode4 rcode5
+agecats5yr2 agecats5yr3 agecats5yr4 female
+mem_1 spd_1 rea_1 memt spdt;
+title "MODEL 2";
+ods output ParameterEstimates=pooledestimates2;
+run;
+
+data pooledestimates2HR;
+set pooledestimates2;
+hr=exp(Estimate);
+hr_lcl=exp(LCLMean);
+hr_ucl=exp(UCLMean);
+run;
+
+/**************MODEL 3 - ADDING IN TIME DEPENDENT VARIABLES*************************************/
+proc phreg data=mi_out  covs(aggregate) ;
+class memory (ref='0') reasoning (ref='0') speed (ref='0') white (ref='0') female (ref='0') agecats5yr2 (ref='0') 
+agecats5yr3 (ref='0') agecats5yr4 (ref='0') 
+marstat1 (ref='0') marstat4 (ref='0') marstat5 (ref='0') currentsmoker (ref='0') formersmoker (ref='0') 
+penn (ref='0') indiana (ref='0') hrca (ref='0') jhu (ref='0') wayne (ref='0') 
+rcode1 (ref='0') rcode2 (ref='0') rcode3 (ref='0') rcode4 (ref='0') rcode5 (ref='0') 
+baselineisch (ref='0') baselineami (ref='0') baselineafib (ref='0') baselinechf (ref='0') baselinediab (ref='0') 
+baselinehyp (ref='0') ; 
+model timefromtreatment*ccwstatus(0,1)= memory speed reasoning
+es_sdoh_comp ahc_sdoh_comp eos_sdoh_comp nbe_sdoh_comp scc_sdoh_comp
+penn indiana hrca jhu wayne
+rcode1 rcode2 rcode3 rcode4 rcode5
+agecats5yr2 agecats5yr3 agecats5yr4 female
+baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp
+mem_1 spd_1 rea_1 memt spdt / rl;
+memt = mem_1*timefromtreatment;
+spdt = spd_1*timefromtreatment;
+by _Imputation_;
+ods output ParameterEstimates=estimates_model3;
+run;
+
+proc mianalyze parms=estimates_model3;
+modeleffects memory speed reasoning 
+es_sdoh_comp ahc_sdoh_comp eos_sdoh_comp nbe_sdoh_comp scc_sdoh_comp
+penn indiana hrca jhu wayne
+rcode1 rcode2 rcode3 rcode4 rcode5
+agecats5yr2 agecats5yr3 agecats5yr4 female
+baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp
+mem_1 spd_1 rea_1 memt spdt;
+title "MODEL 3";
+ods output ParameterEstimates=pooledestimates3;
+run;
+
+data pooledestimates3HR;
+set pooledestimates3;
+hr=exp(Estimate);
+hr_lcl=exp(LCLMean);
+hr_ucl=exp(UCLMean);
+run;
+
+
+/**************MODEL 4 - ADDING IN More TIME DEPENDENT VARIABLES*************************************/
+proc phreg data=mi_out  covs(aggregate) ;
+class memory (ref='0') reasoning (ref='0') speed (ref='0') white (ref='0') female (ref='0') agecats5yr2 (ref='0') 
+agecats5yr3 (ref='0') agecats5yr4 (ref='0') 
+marstat1 (ref='0') marstat4 (ref='0') marstat5 (ref='0') currentsmoker (ref='0') formersmoker (ref='0') 
+penn (ref='0') indiana (ref='0') hrca (ref='0') jhu (ref='0') wayne (ref='0') 
+rcode1 (ref='0') rcode2 (ref='0') rcode3 (ref='0') rcode4 (ref='0') rcode5 (ref='0') 
+baselineisch (ref='0') baselineami (ref='0') baselineafib (ref='0') baselinechf (ref='0') baselinediab (ref='0') 
+baselinehyp (ref='0') ; 
+model timefromtreatment*ccwstatus(0,1)= memory speed reasoning
+es_sdoh_comp ahc_sdoh_comp eos_sdoh_comp nbe_sdoh_comp scc_sdoh_comp
+penn indiana hrca jhu wayne
+rcode1 rcode2 rcode3 rcode4 rcode5
+agecats5yr2 agecats5yr3 agecats5yr4 female
+baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp
+currentsmoker formersmoker
+marstat1 marstat4 marstat5
+mem_1 spd_1 rea_1 memt spdt / rl;
+memt = mem_1*timefromtreatment;
+spdt = spd_1*timefromtreatment;
+by _Imputation_;
+ods output ParameterEstimates=estimates_model4;
+run;
+
+proc mianalyze parms=estimates_model4;
+modeleffects memory speed reasoning 
+es_sdoh_comp ahc_sdoh_comp eos_sdoh_comp nbe_sdoh_comp scc_sdoh_comp
+penn indiana hrca jhu wayne
+rcode1 rcode2 rcode3 rcode4 rcode5
+agecats5yr2 agecats5yr3 agecats5yr4 female
+baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp
+currentsmoker formersmoker
+marstat1 marstat4 marstat5
+mem_1 spd_1 rea_1 memt spdt;
+title "MODEL 4";
+ods output ParameterEstimates=pooledestimates4;
+run;
+
+data pooledestimates4HR;
+set pooledestimates4;
+hr=exp(Estimate);
+hr_lcl=exp(LCLMean);
+hr_ucl=exp(UCLMean);
+run;
+
+
+
+
+proc print data=estimates_model1;
+title "MODEL 1";
+run;
+proc print data= pooledestimates2HR;
+title "MODEL 2";
+var parm Estimate hr hr_lcl hr_ucl;
+run;
+proc print data= pooledestimates3HR;
+title "MODEL 3";
+var parm Estimate hr hr_lcl hr_ucl;
+run;
+proc print data= pooledestimates4HR;
+title "MODEL 4";
+var parm Estimate hr hr_lcl hr_ucl;
+run;

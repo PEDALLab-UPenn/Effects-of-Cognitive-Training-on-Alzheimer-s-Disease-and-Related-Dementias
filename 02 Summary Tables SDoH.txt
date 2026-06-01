@@ -1,0 +1,90 @@
+				/*****************TABLE 1: BASELINE DESCRIPTIVE STATISTICS BY TREATMENT ARM********************/
+libname home 'SUPPRESSED FILE PATH';
+
+proc sort data=home.active_claimsKM_forgellert; by id; run; /*N=1791*/ 
+proc sort data=home.sdoh_composites; by id; run; /*N=2505*/ 
+/*ONE TO MANY MERGE*/ 
+data active_claims_sdoh; /*N=1607*/ 
+	merge home.active_claimsKM_forgellert (in=a) home.sdoh_composites (in=b);
+	by id;
+	if a and b; /*ET KEEPING THOSE WITH SDOH DATA*/ 
+run;		
+				  
+%macro table1 ;
+%do i = 1 %to 4; 
+proc means data=active_claims_sdoh stackodsoutput n nmiss mean std;
+title "TABLE 1 BASELINE CHARACTERISTICS, BY GROUP";
+var agecats5yr1 agecats5yr2 agecats5yr3 agecats5yr4 female white yrseduc_1 
+	marstat1 marstat4 marstat5 marstat6 currentsmoker
+	formersmoker baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp
+	mem_1 spd_1 rea_1 penn indiana hrca jhu wayne alabama 
+	es_sdoh_comp ahc_sdoh_comp eos_sdoh_comp nbe_sdoh_comp scc_sdoh_comp
+	mortality agedeathall hmo ; 
+	where tgroup =&i;
+	ods output summary=out&i;
+run; 
+
+/*MAKE TWO DECIMAL PLACES, CONCATENATE AND FLAG WHITE GROUP*/ 
+data out&i ; 
+set out&i ;
+	n=_n_;
+	meanround= round (mean, .01);
+	stddevround= round (stddev, .01);
+	MeanSTD&i = cat (meanround,'(',stddevround,')');  
+	keep label variable meanstd&i n ;
+run; 
+proc sort data= out&i; by n; run; 
+%end; 
+%mend; 
+%table1;
+
+data outall; 
+	merge out1 out2 out3 out4; 
+	by n;
+	rename  MeanSTD1 = Memory  MeanSTD2 = Reasoning  MeanSTD3 = Speed  MeanSTD4 = Control; 
+	drop n variable;
+run;
+
+
+proc format; value grouplab 1 = 'Memory' 2 = 'Reasoning' 3 = 'Speed' 4 = 'Control'; run;
+proc freq data=active_claims_sdoh; format tgroup grouplab.; table tgroup/out= total; run; 
+data total_tgroup ; set total;  format tgroup grouplab.;  keep tgroup count; run; 
+proc transpose data=total_tgroup out= outdata; id tgroup; run; 
+
+proc sql ; 
+	create table total1 as	
+	select sum(count) as Totaln
+	from total_tgroup ;
+quit; 
+
+
+/*MERGE TOTAL AND OTHER COUNTS BACK TOGETHER*/ 
+data n; 
+merge total1 outdata ; 
+drop _name_ _Label_ ; 
+Total= put(totaln,20.);
+memoryc= put(memory,20.);
+reasc= put(reasoning,20.);
+spdc= put(speed,20.);
+ctrlc= put(Control,20.);
+drop memory reasoning speed control; 
+run;
+data n; set n; Memory = memoryc; Reasoning= reasc; Speed = spdc; Control = ctrlc; 
+keep total memory reasoning speed control; run; 
+
+data table1_final; 
+	retain Label Total  Memory Reasoning Speed Control;
+	set n outall; 
+	if Label = "" then Label = "No. of Observations";
+run; 
+
+proc print data=table1_final noobs; 	
+	title" Table 1 SDoH. Proportion (Std. Dev) of Baseline Charactersitics by Treatment Group"; 
+	var Label  Memory Reasoning Speed Control; 
+run; 
+
+/*CHECKS*/ 
+proc freq data= active_claims_sdoh; table mortality; run;
+proc means data=active_claims_sdoh n nmiss mean; var agedeathall ; run;
+
+

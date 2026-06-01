@@ -1,0 +1,500 @@
+*LIBRARY; 
+libname home 'ASSIGN LIBRARYs';
+proc format; value grouplab 1 = 'Memory' 2 = 'Reasoning' 3 = 'Speed' 4 = 'Control'; run;
+
+/*STACK MBSF YEARLY DATA - ENROLLMENT AND DEMOGRAPHIC DATA*/ 
+data mbsf; /*N=36788*/ 
+set *SUPPRESSED FILE PATH*.MBSF_AB99_R9412
+*SUPPRESSED FILE PATH*.MBSF_AB00_R9412
+*SUPPRESSED FILE PATH*.MBSF_AB01_R9412
+*SUPPRESSED FILE PATH*.MBSF_AB02_R9412
+*SUPPRESSED FILE PATH*.MBSF_AB03_R9412
+*SUPPRESSED FILE PATH*.MBSF_AB04_R9412
+*SUPPRESSED FILE PATH*.MBSF_AB05_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD06_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD07_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD08_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD09_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD10_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD11_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD12_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD13_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD14_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD15_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD16_R9412
+*SUPPRESSED FILE PATH*.MBSF_ABCD17_R10799
+*SUPPRESSED FILE PATH*.MBSF_ABCD18_R10799
+*SUPPRESSED FILE PATH*.MBSF_ABCD19_R10799; 
+run; 
+
+**STACK CHRONIC CONDITIONS YEARLY FILES ;
+data cc ; /*=36,788*/
+set *SUPPRESSED FILE PATH*.MBSF_CC99_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC00_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC01_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC02_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC03_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC04_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC05_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC06_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC07_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC08_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC09_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC10_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC11_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC12_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC13_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC14_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC15_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC16_R9412
+*SUPPRESSED FILE PATH*.MBSF_CC17_R10799
+*SUPPRESSED FILE PATH*.MBSF_CC18_R10799
+*SUPPRESSED FILE PATH*.MBSF_CC19_R10799; 
+run;
+proc contents data=cc; run; 
+proc contents data=mbsf; run; 
+
+/*SORT STACKED DATASETS*/ 
+proc sort data= mbsf; by bene_id bene_enrollmt_ref_yr; run;
+proc sort data=cc; by bene_id bene_enrollmt_ref_yr; run; 
+
+/*MERGE CLAIMS (MBSF AND CC) DATASETS - DATA IS LONG*/ 
+data mbsfcc; /*N=36,788*/ 
+	merge mbsf cc; 
+	by bene_id bene_enrollmt_ref_yr; /*ID AND YEAR*/
+run; 
+
+data mbsfcc2; /*N=36,788*/
+	set mbsfcc; 
+*FIND OBSERVATIONS WHO STARTED ON MA;
+	if BENE_HMO_CVRAGE_TOT_MONS > 0 and BENE_ENROLLMT_REF_YR = 1999 then mastart = 1; 
+	else mastart = 0;
+* MA DEFINTION;
+	if BENE_HMO_CVRAGE_TOT_MONS > 0 then hmo = 1; else hmo = 0;
+run; 
+
+/*THIS LOOP APPLIES "STARTED STUDY ON MA" INDICATOR TO ALL YEARS*/ 
+data mbsfcc3;
+	do until(last.bene_id);
+	set mbsfcc2;
+	by bene_id;
+
+if first.bene_id then startma = 0;
+		startma + mastart;
+
+	end;
+	do until(last.bene_id);
+	set mbsfcc2;
+	by bene_id;
+	output;
+	end;
+run;
+
+/*EXCLUDE THOSE ON MA AT THE START*/ 
+data mbsfcc4; /*26957*/
+	set mbsfcc3; 
+	if startma = 1 then delete; 
+run;
+
+data mbsfcc5; 
+	set mbsfcc4;
+/*PULL OUT YEAR OF ALZ AND IF IT OCCURS IN SAME YEAR, FLAG*/ 
+	adrd_year_dx = year (ALZH_DEMEN_EVER); 
+/*IF 1ST ALZHEIMER'S DX DATE IS NOT BLANK, THEN FLAG ADRD = 1 IN THAT YEAR;*/
+	if not missing(ALZH_DEMEN_EVER) and adrd_year_dx = bene_enrollmt_ref_yr 
+	then alzflag = 1; else alzflag = 0;
+	if not missing(BENE_DEATH_DT) then deathflag = 1; else deathflag = 0; /*USING MBSF HERE*/ 
+*ALIVE;
+	if BENE_DEATH_DT > 0 then alive = 0; else alive = 1;
+/*BASELINE VASCULAR CONDITIONS*/ 
+	if DEPRESSION_EVER < '01JAN2002'd then baselinedep = 1; *IF CONDITION HAPPENED IN FIRST TWO YEARS THEN =1; 
+	if missing(DEPRESSION_EVER) then baselinedep = 0; *IF NO DATE LISTED, THEN =0;
+	if DEPRESSION_EVER >= '01JAN2002'd then baselinedep = 0; *IF AFTER THOSE 2 YEARS, =0;
+
+	if ISCHEMICHEART_EVER < '01JAN2002'd then baselineisch = 1;
+	if missing(ISCHEMICHEART_EVER) then baselineisch = 0;
+	if missing(baselineisch) then baselineisch = 0;
+
+	if STROKE_TIA_EVER < '01JAN2002'd then baselinestroke = 1;
+	if missing(STROKE_TIA_EVER) then baselinestroke = 0;
+	if missing(baselinestroke) then baselinestroke = 0;
+
+	if AMI_EVER < '01JAN2002'd then baselineami = 1;
+	if missing(AMI_EVER) then baselineami = 0;
+	if missing(baselineami) then baselineami = 0;
+
+	if ATRIAL_FIB_EVER < '01JAN2002'd then baselineafib = 1;
+	if missing(ATRIAL_FIB_EVER) then baselineafib = 0;
+	if missing(baselineafib) then baselineafib = 0;
+
+	if CHF_EVER < '01JAN2002'd then baselinechf = 1;
+	if missing(CHF_EVER) then baselinechf = 0;
+	if missing(baselinechf) then baselinechf = 0;
+
+	if DIABETES_EVER < '01JAN2002'd then baselinediab = 1;
+	if missing(DIABETES_EVER) then baselinediab = 0;
+	if missing(baselinediab) then baselinediab = 0;
+
+	if HYPERT_EVER < '01JAN2002'd then baselinehyp = 1;
+	if missing(HYPERT_EVER) then baselinehyp = 0;
+	if missing(baselinehyp) then baselinehyp = 0;
+
+/*TIME VARIABLES*/ 
+	*CALLED DIFFERENT VARIABLE NAMES IN DIFFERENT CLAIMS YEARS;
+	if BENE_ENROLLMT_REF_YR <= 2005 then totalage = BENE_AGE_AT_END_REF_YR;
+	if BENE_ENROLLMT_REF_YR > 2005 then totalage =  AGE_AT_END_REF_YR;
+/*MAKE SPECIFIC TIME VARIABLES*/ 
+	adrdyears = intck('year',BENE_BIRTH_DT, ALZH_DEMEN_EVER);
+	adrdyears65 = adrdyears - 65;
+	 
+run; 
+
+/*APPLY DEATH DATES TO ALL YEARS*/ 
+proc sort data=mbsfcc5 out=mbsfcc6;
+   by bene_id descending bene_enrollmt_ref_yr ;
+run; 
+
+data mbsfcc7;
+	set mbsfcc6;
+	by bene_id;
+	retain _bene_death_dt ;
+	if first.bene_id and bene_death_dt = . then _bene_death_dt = .;
+	if first.bene_id and not missing(bene_death_dt) then _bene_death_dt=bene_death_dt;
+	bene_death_dt=_bene_death_dt;
+	drop _bene_death_dt;
+run;
+proc sort data=mbsfcc7 out=mbsfcc8;/*N=26957*/ 
+   by bene_id bene_enrollmt_ref_yr ;
+run; 
+/*CREATE MAIN OUTCOME - WILL RECODE LATER FOR THE MODEL*/ 
+proc sort data=mbsfcc8; by bene_id totalage; run; 
+data mbsfcc9; /*26,957*/
+	set mbsfcc8;
+	/*PRELIM CODING OF OUTCOMES*/ 
+	if hmo ne 1 and deathflag = 1 and alzflag ne 1 then oldstatus = 1; *DEAD AND NOT ON HMO THAT YEAR, AND NOT ADRD DX;
+	if alzflag =1 and hmo ne 1 then oldstatus = 2; *ADRD AND NOT ON HMO THAT YEAR (COULD DIE THAT YEAR, BUT WILL BE COUNTED AS ADRD FIRST);
+	if alzflag ne 1 and hmo ne 1 and deathflag ne 1 then oldstatus = 0 ; /*ALIVE, NO DISEASE, NO HMO*/ 
+	if hmo = 1 then oldstatus = 3; *IF ENROLLED IN MA, THEN CENSOR;
+
+	*FINAL OBSERVED AGE AS YEARS OVER 65;
+	if oldstatus = 1 then age = totalage - 65;
+	if oldstatus = 0 and hmo ne 1 then age = totalage - 65;
+	if oldstatus = 3 and hmo = 1 then age = totalage - 65;
+	if oldstatus = 2 then age = adrdyears65;
+
+run; 
+
+/*OUTPUT THOSE ALIVE AT THE END, N=141, BRING ALONG VASCULAR COVARIATES TOO */ 
+proc sql; 
+	create table mbsfcc10 as  
+	select bene_id, sum(oldstatus) as oldstatus, max(age) as age, max(bene_birth_dt) as bene_birth_dt,
+	max(bene_enrollmt_ref_yr) as bene_enrollmt_ref_yr, 
+	max(baselinestroke) as baselinestroke, max(baselineisch) as baselineisch,
+	max(baselineami) as baselineami, max(baselineafib) as baselineafib, 
+	max(baselinechf) as baselinechf, max(baselinediab) as baselinediab, 
+	max(baselinehyp) as baselinehyp, max(hmo) as hmo
+	from mbsfcc9 
+	group by bene_id ;  
+quit; 
+data mbsfcc11; 
+	set mbsfcc10;
+	where oldstatus = 0; 
+run; /*THESE PEOPLE WERE ALIVE, NO DISEASE AND NO HMO*/ 
+
+proc contents data=mbsfcc9; run;
+proc contents data=mbsfcc11; run;
+
+proc freq data=mbsfcc9; tables bene_enrollmt_ref_yr; run;
+proc freq data=mbsfcc11; tables bene_enrollmt_ref_yr; run;
+
+/*MERGE TO LONG, BUT EXCLUDE THOSE CENSORED AT THE END (STILL ALIVE) - SO LEAVING ONLY THOSE THAT DIED, ADRD OR HMO*/ 
+data mbsfcc12; /*24019*/ 
+	merge mbsfcc9 (in=a) mbsfcc11 (in=b); 
+	by bene_id;
+	if a and not b; 
+run; 
+
+/* IN THE NEXT FEW STEPS, WE WANT TO SELECT THE FIRST POSTIVE VALUE AND IF THERE ARE NONE, SELECT THE OBS FROM mbsfcc11 - THOSE ALIVE AT THE END )*/ 
+data mbsfcc13; /*24019*/ 
+	set mbsfcc12;
+	if oldstatus=0 then group='N'; if oldstatus in (1,2,3) then group='P'; 
+run; 
+/*proc print data=mbsfcc13; var bene_id bene_age_at_end_ref_yr totalage hmo alzflag deathflag oldstatus group; run; */
+data mbsfcc14; 
+	set mbsfcc13; 
+	if group='P' then output; *KEEPS OBSERVATIONS WITH EVENTS, SELECT WHICH CAME FIRST IN TIME ;
+run; 
+/*THEN SELECT THE FIRST OBS*/
+data mbsfcc15; /*1739*/ 
+	set mbsfcc14; 
+	by bene_id ;
+	if first.bene_id then output; *OUTPUT FIRST OF POSITIVE GROUPS;
+run; 
+/*MERGE CENSORED (STILL ALIVE) TO THOSE WITH EVENT CODES (1739+141=1880)*/ 
+data mbsfcc16; /*N=1880*/ 
+	set mbsfcc11 mbsfcc15 ;
+run; 
+
+*CODE CENSORED (ALIVE) BACK TO ZERO IN FINAL DATASET;
+data mbsfcc17; 
+	set mbsfcc16;
+	/*CREATING NEW FINAL OUTCOME*/ 
+	if oldstatus=0 then ccwstatus = 0; 
+	if oldstatus=1 then ccwstatus = 1; 
+	if oldstatus=2 then ccwstatus = 2; 
+	if oldstatus=3 then ccwstatus = 0; 
+	drop oldstatus;
+run; 
+
+/****************************************
+*************MERGING DATASETS************
+*****************************************/
+
+/*PREP CROSSWALK*/ 
+/*CLEAN UP CROSSWALK FROM CCW: A CROSSWALK OF SSNS TO BENEFICIARY IDS: *SUPPRESSED FILE PATH*.SSNBENEX19_R9389 - THIS LINKS CLAIMS DATA IDS (CALLED BENE_ID)
+TO SOCIAL SECURITY NUMBERS TO THEN LINK TO ACTIVE SURVEY DATA USING THOSE SSNS.*/ 
+data ssnbenex19_r9389; /*N=2617*/ 
+	set *SUPPRESSED FILE PATH*.ssnbenex19_r9389;
+	ssn = input(ORIG_SSN, 9.); 
+run;
+
+/*CLEAN UP ACTIVE DATA FOR CROSSWALK - CREATE AND MERGE IN AN ACTIVE-ID TO SSN CROSSWALK 
+A CROSSWALK OF SSNS TO ACTIVE ID NUMBERS: HOME.NIDSAS: THIS IS JUST TAKEN FROM THE ACTIVE FILES
+AND WAS UPLOADED TO THE VRDC.*/ 
+data idssnxwalk;/*N=2799*/ 
+	set home.nidsas; /*KEEP THIS FROM THE HOME FOLDER*/
+	rename nid = ssn;
+run;
+proc sort data=idssnxwalk; by ssn; run;
+proc sort data=ssnbenex19_r9389; by ssn; run;
+/*MERGE CCW XWALK WITH SSNS AND BENE_IDS TO ACTIVE SSNS*/ 
+data xwalk; /*2548*/
+	merge ssnbenex19_r9389 (in=a) idssnxwalk (in=b) ; 
+	by ssn; 
+	if a and b;
+	if ssn_match = 1; /*ONLY KEEP PEOPLE WHO HAVE BENE_ID MATCHES*/
+run; 
+
+/*MERGE INTO ACTIVE DATA*/ 
+*PREPARE ACTIVE DATA FOR MERGE;
+data csvsurv;/*THIS IS THE ACTIVE SURVEY DATA, N=2802*/ 
+	set home.csvsurv;
+	drop age ; /*DROPPED BECAUSE I USE THIS VARIABLE NAME LATER FOR THE MODEL*/ 
+run;
+/*MERGE IN BENE_ID TO ACTIVE DATA USING "ID"*/ 
+proc sort data=xwalk; by id; run;
+proc sort data=csvsurv; by id; run;
+data csvsurv2; /*2548 HAVE A MATCH TO CLAIMS DATA (ALREADY EXCLUDED PEOPLE WHO STARTED ON MA)*/ 
+	merge xwalk (in=a) csvsurv (in=b); 
+	by id; 
+	if a and b;
+run; 
+
+/*MERGE INTO CLAIMS DATASET*/
+proc sort data=mbsfcc17; by bene_id; run; /*1880*/ 
+proc sort data=csvsurv2; by bene_id; run; /*2548*/ 
+data mbsfsurvey1; /*1852 (LOST 28)*/ 
+	merge mbsfcc17 (in=a) csvsurv2 (in=b); 
+	by bene_id; 
+	if a and b; 
+run; 
+/*SOME DATA CHECKS
+proc freq data=mbsfsurvey1; table replcode_1 SITE_1 RACE_1 FEMALE_1 age; RUN; 
+proc freq data=mbsfsurvey1; table female_1  BENE_SEX_IDENT_CD SEX_MATCH id bene_id; run;
+proc means data=mbsfsurvey1; var dob BENE_BIRTH_DT; run; 
+proc means data=mbsfcc17; var  BENE_BIRTH_DT; run; 
+proc univariate data=mbsfsurvey2; var over65 ; histogram; run;
+proc univariate data=mbsfsurvey1; var age_1 ; histogram; run; 
+proc freq data=mbsfsurvey2; table  mortality hmo agedeathall; run;
+proc freq data=mbsfsurvey1; table smokenow_1; run; 
+*/
+/*MORE CLEANING AND MAKING NEW VARIABLES FOR REGRESSIONS*/ 
+data mbsfsurvey2; /*1791*/ 
+	set mbsfsurvey1; 
+	/******************MATCH ON SEX AND MONTH/YEAR DOB (SSN MATCH IN STEP ABOVE)******************/ 
+	/*ACTIVE DOB*/ 
+	active_mo_dob = month(DOB);
+	active_yr_dob = year(DOB);
+	/*CLAIMS DOB*/ 
+	cms_mo_dob = month(BENE_BIRTH_DT);
+	cms_yr_dob = year(BENE_BIRTH_DT);
+	if active_mo_dob =cms_mo_dob then mo_match =1; 
+	if active_yr_dob =cms_yr_dob then yr_match =1; 
+	/*EXCLUDE ON ALL THREE*/ 
+	if SEX_MATCH = 1 /*SEX MATCH VARIABLE ALREADY MADE IN CROSSWALK*/ and mo_match =1 and yr_match =1 ; 
+
+	/***********************CREATING VARIABLES FOR REGRESSION***********************/ 
+	*NUMERIC TREATMENT GROUP;
+	tgroup = input(intgrp_1, 1.);
+	if tgroup in (1,2,3) then treatment = 1; if tgroup = 4 then treatment =0; 
+	/*DUMMIES FOR TREATMENT*/ 
+	if tgroup = 1 then memory = 1; else memory = 0;
+	if tgroup = 2 then reasoning = 1; else reasoning = 0;
+	if tgroup = 3 then speed = 1; else speed = 0;
+	if tgroup = 4 then control = 1; else control = 0;	
+	*BASELINE AGE AS YEARS OVER 65;
+	over65 = age_1 - 65;
+	*TIME FROM TREATEMENT (IN YEARS); 
+	timefromtreatment = age - over65; 
+	*USE SURVEY GENDER, CLAIMS IS NOT RELIABLE AND MISSING MANY; 
+	if female_1 = "female" then female = 1; if female_1 ="male" then female = 0;  
+	/*USE SURVEY RACE*/ 
+	if race_1 = '1 White' then white = 1; else white = 0;
+	/*MAKE FEWER MARITAL STAUS NUMERIC DUMMIES*/ 
+	if marstat_1 = "1 Married" then MARSTAT1=1; if marstat_1 ne "1 Married" and marstat_1 ne "" then MARSTAT1 =0; 
+	if marstat_1 = "3 Separated" or marstat_1 = "4 Divorced" and marstat_1 ne ""  then MARSTAT4=1; 	if MARSTAT4 ne 1 and marstat_1 ne "" then MARSTAT4=0; 
+	if marstat_1 = "5 Widowed" then MARSTAT5=1;	if marstat_1 ne "5 Widowed" and marstat_1 ne "" then MARSTAT5 =0; 
+	if marstat_1 = "6 Single" then MARSTAT6=1;	if marstat_1 ne "6 Single" and marstat_1 ne "" then MARSTAT6 =0; 
+	/*SMOKING STATUS*/ 
+	if smokenow_1 = 1 then currentsmoker = 1; else currentsmoker = 0;
+	if smokenow_1 = 2 then formersmoker = 1; else formersmoker = 0;
+	/*MAKE SITE INTO DUMMIES*/ 
+	if site_1 = '1 Alabama' then alabama = 1; else alabama = 0;
+	if site_1 = '2 Indiana' then indiana = 1; else indiana = 0;
+	if site_1 = '3 HRCA' then hrca = 1; else hrca = 0;
+	if site_1 = '4 JHU' then jhu = 1; else jhu = 0;
+	if site_1 = '5 Wayne State' then wayne = 1; else wayne = 0;
+	if site_1 = '6 Penn State' then penn = 1; else penn = 0;
+	/*MAKE REPLICATE CODES INTO DUMMIES*/ 
+	if replcode_1 = '1' then rcode1 = 1; else rcode1 = 0;
+	if replcode_1 = '2' then rcode2 = 1; else rcode2 = 0;
+	if replcode_1 = '3' then rcode3 = 1; else rcode3 = 0;
+	if replcode_1 = '4' then rcode4 = 1; else rcode4 = 0;
+	if replcode_1 = '5' then rcode5 = 1; else rcode5 = 0;
+	if replcode_1 = '6' then rcode6 = 1; else rcode6 = 0;
+	/*EDUCATION DUMMIES*/ 
+	if yrseduc_1 < 12 then educdum1 = 1; else educdum1 = 0; /*LESS THAN 12*/ 
+	if yrseduc_1 = 12 then educdum2 = 1; else educdum2 = 0; /*12*/ 
+	if yrseduc_1 > 12 and yrseduc_1 < 16 then educdum3 = 1; else educdum3 = 0; /*BETWEEN 12-16*/ 
+	if yrseduc_1 >= 16 then educdum4 = 1; else educdum4 = 0; /*16 OR MORE*/ 
+	/*BOOSTER DUMMIES*/
+	if booster_1 = 1 and memory = 1 then memboost = 1; else memboost = 0;
+	if booster_1 = 1 and reasoning = 1 then reaboost = 1; else reaboost = 0;
+	if booster_1 = 1 and speed = 1 then spdboost = 1; else spdboost = 0;
+	if booster_1 = 0 and memory = 1 then memnoboost = 1; else memnoboost = 0;
+	if booster_1 = 0 and reasoning = 1 then reanoboost = 1; else reanoboost = 0;
+	if booster_1 = 0 and speed = 1 then spdnoboost = 1; else spdnoboost = 0;
+	/*OTHER VARIABLES NEEDED FOR TABLES AND REGRESSIONS*/	
+	if bene_death_dt > 0 then mortality = 1; if bene_death_dt =.  then mortality = 0; /*OVERALL MORTALITY OF ACTIVE*/ 
+	if ccwstatus = 2 and age ne . then ageadrd = age ; /*AGE OF ADRD*/
+	if ccwstatus = 1 and age ne . then agedeath = age ; /*AGE AT DEATH FOR THOSE ON FFS*/ 	
+	if mortality = 1 and age ne . then agedeathall = age + 65 ; /*AGE AT DEATH FOR WHOLE SAMPLE */
+	if int_sess_1 >= 8 then boosterelig = 1; else boosterelig = 0; /*BOOSTER ELIGIBLE*/ 
+
+	/*MAKE TIME INTERACTIONS - THIS HAPPENS IN ESTIMATION FILES NOW - AFTER IMPUTATION OF SPD_1 */ 
+	/*	memt =mem_1*log(timefromtreatment); */
+	/*	spdt= spd_1*log(timefromtreatment);*/
+	/*	reat= rea_1*log(timefromtreatment);*/
+	/*	logtimefrom=log(timefromtreatment);*/
+
+	/*CANNOT TAKE LOG OF 0 - THIS IS USED IN MAKING FACTOR SCORE * TIME INTERACTIONS IN ESTIMATION FILES */ 
+/*	if timefromtreatment ne 0 then logtimefrom=log(timefromtreatment);*/
+
+	/*NEW AGE CATS DUMMIES*/ 
+	finalage=age+65;
+	if 65 <= age_1 <= 69 then agecats5yr1 =1; else agecats5yr1 =0;
+	if 70 <= age_1 <= 74 then agecats5yr2 =1; else agecats5yr2 =0;
+	if 75 <= age_1 <= 79 then agecats5yr3 =1; else agecats5yr3 =0;
+	if age_1 >=80 then agecats5yr4 =1; else agecats5yr4 =0;
+	/*OVEALL AGE CATS*/ 
+	if 65 <= age_1 <= 69 then agecats5yr =1;
+	if 70 <= age_1 <= 74 then agecats5yr =2;
+	if 75 <= age_1 <= 79 then agecats5yr =3;
+	if age_1 >=80 then agecats5yr =4; 
+
+keep 
+	/*IDENTIFIERS*/ id bene_id bene_enrollmt_ref_yr sex_match mo_match yr_match bene_death_dt
+	/*OUTCOMES*/ finalage age ccwstatus timefromtreatment alzflag
+	/*TREATMENT*/ tgroup memory reasoning speed control treatment
+	/*BASELINE AGE*/ over65 age_1 agecats5yr1 agecats5yr2 agecats5yr3 agecats5yr4 agecats5yr
+	/*RACE*/ white race_1 
+	/*GENDER*/ female
+	/*FACTOR SCORES*/ mem_1 spd_1 rea_1
+	/*CONTINUOUS YEARS OF EDUCATION*/ yrseduc_1 educdum1 educdum2 educdum3 educdum4
+	/*BASELINE VASCULAR INDICATORS*/ baselinestroke baselineisch baselineami baselineafib baselinechf baselinediab baselinehyp 
+	/*DEPRESSION SCORE*/ cesdtot_1 
+	/*MARITAL STATUS*/ marstat_1 marstat1 marstat4 marstat5 marstat6
+	/*SMOKING STATUS*/ currentsmoker formersmoker 
+	/*SITE*/site_1 penn indiana hrca jhu wayne alabama
+	/*REPLICATE CODE*/ rcode1 rcode2 rcode3 rcode4 rcode5 rcode6 
+	/*BOOSTER*/ int_sess_1 boosterelig booster_1 memboost memnoboost spdboost spdnoboost reaboost reanoboost
+	mortality hmo agedeathall /*logtimefrom*/ ;
+label 
+	agedeathall ="Age at death, if died before Dec 31, 2019"
+	treatment ="Any treatment"
+	timefromtreatment "Time from Treatment"
+	age = "Age at last observation" 
+	mem_1 = "Memory Factor Score"
+	spd_1 = "Processing Speed Factor Score"
+	rea_1 = "Reasoning Factor Score"
+	white = "White Race"
+	cesdtot_1 = "Depressive Symptoms" 
+	over65 = "Baseline years over age 65" 
+	age_1 = "Baseline age in years" 
+	female = "Female"
+	baselinestroke = "Stroke"
+	baselineisch ="Ischemia"
+	baselineami = "Acute myocardial infarction"
+	baselineafib = "Atrial fibrillation"
+	baselinechf = "Congestive heart failure"
+	baselinediab = "Diabetes"
+	baselinehyp = "Hypertension"
+	currentsmoker = "Current Smoker"
+	formersmoker = "Former Smoker"
+	educdum1 = "Baseline Education, Less than 12 years"
+	educdum2 = "Baseline Education, 12 years"
+	educdum3 = "Baseline Education, 12-16 years"
+	educdum4 = "Baseline Education, 16 years or more"
+	yrseduc_1 = "Years of education"
+	rcode1 = "Replicate code 1"
+	rcode2 = "Replicate code 2"
+	rcode3 = "Replicate code 3"
+	rcode4 = "Replicate code 4"
+	rcode5 = "Replicate code 5"
+	penn = "Site-Penn"
+	indiana="Site-Indiana"
+	hrca = "Site-HRCA"
+	jhu = "Site-JHU"
+	wayne = "Site-Wayne"  
+	alabama = "Site-Alabama"
+	marstat1 ="Married"
+	marstat4 ="Separated/Divorced"
+	marstat5 ="Widowed"
+	marstat6 ="Single"
+	mortality= "Mortality"
+	boosterelig = "Booster Eligible"
+	hmo= "Enrolled in MA prior to death"
+	agecats5yr1 ="Baseline age: 65-69 Years"
+    agecats5yr2 ="Baseline age: 70-74 Years"
+    agecats5yr3 ="Baseline age: 75-79 Years"
+    agecats5yr4 ="Baseline age: >79 Years";   
+run; 
+
+proc freq data=mbsfsurvey2 noprint;
+	tables bene_id / out=count;
+	tables id / out=count2;
+	run;
+	proc freq data=count; tables count;
+	proc freq data=count2; tables count;
+	run;
+
+	proc sort data=count2; by id; run;
+	proc sort data=mbsfsurvey2; by id; run;
+
+data mbsfsurvey3;
+	merge mbsfsurvey2 count2;
+	by id;
+	if count = 2 then delete;
+run;
+
+/*MAKE PERMANENT DATASET*/ 
+data home.active_claimsKM_forgellert; set mbsfsurvey3; run; 
+
+/*SOME CHECKS*/ 
+proc freq data= mbsfsurvey2; 
+	table  mortality ccwstatus ;
+run;
+
+proc means data=mbsfsurvey2 n nmiss mean min max; 
+	var  timefromtreatment bene_death_dt agedeathall; 
+run; 
